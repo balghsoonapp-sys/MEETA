@@ -1,21 +1,28 @@
 const crypto = require("crypto");
 
-function decryptRequest(body) {
-  if (!body) throw new Error("No body received");
+// ================= PRIVATE KEY SAFETY =================
+function getPrivateKey() {
+  const key = process.env.PRIVATE_KEY;
 
+  if (!key) {
+    throw new Error("PRIVATE_KEY missing in environment");
+  }
+
+  return key.replace(/\\n/g, "\n");
+}
+
+// ================= DECRYPT =================
+function decryptRequest(body) {
   const {
     encrypted_flow_data,
     encrypted_aes_key,
     initial_vector
   } = body;
 
-  if (!encrypted_flow_data || !encrypted_aes_key || !initial_vector) {
-    throw new Error("Missing encrypted fields");
-  }
-
-  const privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
+  const privateKey = getPrivateKey();
   const passphrase = process.env.PASSPHRASE || undefined;
 
+  // 🔑 decrypt AES key
   const aesKey = crypto.privateDecrypt(
     {
       key: privateKey,
@@ -26,6 +33,7 @@ function decryptRequest(body) {
     Buffer.from(encrypted_aes_key, "base64")
   );
 
+  // 🔓 decrypt payload
   const decipher = crypto.createDecipheriv(
     "aes-256-cbc",
     aesKey,
@@ -35,19 +43,21 @@ function decryptRequest(body) {
   let decrypted = decipher.update(encrypted_flow_data, "base64", "utf8");
   decrypted += decipher.final("utf8");
 
+  const parsed = JSON.parse(decrypted);
+
   return {
-    ...JSON.parse(decrypted),
-    aesKey,
-    iv: Buffer.from(initial_vector, "base64")
+    ...parsed,
+    aes_key: aesKey,
+    initial_vector: Buffer.from(initial_vector, "base64")
   };
 }
 
-function encryptResponse(payload, req) {
-  const cipher = crypto.createCipheriv(
-    "aes-256-cbc",
-    req.aesKey,
-    req.iv
-  );
+// ================= ENCRYPT =================
+function encryptResponse(payload, decryptedRequest) {
+  const key = decryptedRequest.aes_key;
+  const iv = decryptedRequest.initial_vector;
+
+  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
 
   let encrypted = cipher.update(
     JSON.stringify(payload),
@@ -60,7 +70,16 @@ function encryptResponse(payload, req) {
   return encrypted;
 }
 
+// ================= ERROR =================
+class FlowEndpointException extends Error {
+  constructor(statusCode) {
+    super("Flow Error");
+    this.statusCode = statusCode;
+  }
+}
+
 module.exports = {
   decryptRequest,
-  encryptResponse
+  encryptResponse,
+  FlowEndpointException
 };
