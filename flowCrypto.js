@@ -1,7 +1,47 @@
 const crypto = require("crypto");
 
-function encryptResponse(payload, aesKey, iv) {
-    const json = JSON.stringify(payload);
+// ================= DECRYPT =================
+function decryptRequest(body) {
+    const {
+        encrypted_flow_data,
+        encrypted_aes_key,
+        initial_vector
+    } = body;
+
+    const privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
+    const passphrase = process.env.PASSPHRASE || undefined;
+
+    const aesKey = crypto.privateDecrypt(
+        {
+            key: privateKey,
+            passphrase: passphrase,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: "sha256"
+        },
+        Buffer.from(encrypted_aes_key, "base64")
+    );
+
+    const decipher = crypto.createDecipheriv(
+        "aes-256-cbc",
+        aesKey,
+        Buffer.from(initial_vector, "base64")
+    );
+
+    let decrypted = decipher.update(
+        encrypted_flow_data,
+        "base64",
+        "utf8"
+    );
+
+    decrypted += decipher.final("utf8");
+
+    return JSON.parse(decrypted);
+}
+
+// ================= ENCRYPT =================
+function encryptResponse(payload, decryptedRequest) {
+    const aesKey = decryptedRequest.aes_key;
+    const iv = decryptedRequest.initial_vector;
 
     const cipher = crypto.createCipheriv(
         "aes-256-cbc",
@@ -9,26 +49,26 @@ function encryptResponse(payload, aesKey, iv) {
         iv
     );
 
-    let encrypted = cipher.update(json, "utf8", "base64");
-    encrypted += cipher.final("base64");
-
-    return encrypted; // لازم Base64 فقط
-}
-
-function decryptRequest(encryptedBody, privateKey, passphrase) {
-    const buffer = Buffer.from(encryptedBody, "base64");
-
-    const decrypted = crypto.privateDecrypt(
-        {
-            key: privateKey,
-            passphrase: passphrase,
-            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-            oaepHash: "sha256",
-        },
-        buffer
+    let encrypted = cipher.update(
+        JSON.stringify(payload),
+        "utf8",
+        "base64"
     );
 
-    return JSON.parse(decrypted.toString("utf8"));
+    encrypted += cipher.final("base64");
+
+    return encrypted;
 }
 
-module.exports = { encryptResponse, decryptRequest };
+class FlowEndpointException extends Error {
+    constructor(statusCode) {
+        super("Flow error");
+        this.statusCode = statusCode;
+    }
+}
+
+module.exports = {
+    decryptRequest,
+    encryptResponse,
+    FlowEndpointException
+};
