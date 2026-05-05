@@ -10,39 +10,41 @@ const {
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
-// ===== HEALTH CHECK (IMPORTANT) =====
+// ================= HEALTH CHECK =================
 app.get("/", (req, res) => {
-  res.send("OK");
+  res.status(200).send("OK");
 });
 
-// ===== WEBHOOK =====
+// ================= FLOW ENDPOINT =================
 app.post("/webhook", (req, res) => {
   try {
-    console.log("📩 Incoming request:", req.body);
+    console.log("📩 Request received");
 
-    // 🔥 حماية: إذا البيانات ناقصة لا تكسر السيرفر
-    if (!req.body || !req.body.encrypted_flow_data) {
-      console.log("⚠️ Invalid request - skipping decrypt");
-
-      return res.json({
-        status: "ignored"
-      });
+    // 🔥 حماية كاملة من الطلبات الفارغة (Meta health check)
+    if (
+      !req.body ||
+      !req.body.encrypted_flow_data ||
+      !req.body.encrypted_aes_key ||
+      !req.body.initial_vector
+    ) {
+      console.log("⚠️ Invalid or health-check request ignored");
+      return res.status(200).send("OK");
     }
 
-    // 🔐 فك التشفير
+    // 🔐 decrypt request
     const decrypted = decryptRequest(req.body);
-
-    console.log("🔓 Decrypted OK");
 
     const { version, action } = decrypted;
 
-    // ===== INIT =====
+    console.log("🔓 Action:", action);
+
+    // ================= INIT =================
     if (action === "INIT") {
       const response = {
         version,
         screen: "LOAN",
         data: {
-          title: "Meta Flow Working 🚀",
+          title: "Production Flow Working 🚀",
           amount: "720000",
           status: "active"
         }
@@ -52,7 +54,7 @@ app.post("/webhook", (req, res) => {
       return res.send(encrypted);
     }
 
-    // ===== DEFAULT =====
+    // ================= DEFAULT =================
     const response = {
       version,
       screen: "LOAN",
@@ -72,13 +74,13 @@ app.post("/webhook", (req, res) => {
       return res.status(err.statusCode).send();
     }
 
-    // 🔥 مهم جدًا: لا ترجع HTML error
+    // ⚠️ مهم جدًا: Meta ما يحب HTML errors
     return res.status(200).send("error-safe");
   }
 });
 
-// ===== START =====
+// ================= START SERVER =================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("🚀 Running on port " + PORT);
+  console.log("🚀 Production server running on port", PORT);
 });
