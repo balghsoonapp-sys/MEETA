@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 
-// ================= PRIVATE KEY SAFETY =================
+// ================= PRIVATE KEY =================
 function getPrivateKey() {
   const key = process.env.PRIVATE_KEY;
 
@@ -70,7 +70,7 @@ function encryptResponse(payload, decryptedRequest) {
   return encrypted;
 }
 
-// ================= ERROR =================
+// ================= ERROR CLASS =================
 class FlowEndpointException extends Error {
   constructor(statusCode) {
     super("Flow Error");
