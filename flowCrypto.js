@@ -11,7 +11,7 @@ function decryptRequest(body) {
   const privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
   const passphrase = process.env.PASSPHRASE || undefined;
 
-  // 🔑 AES KEY decrypt (RSA)
+  // AES key decrypt
   const aesKey = crypto.privateDecrypt(
     {
       key: privateKey,
@@ -22,7 +22,6 @@ function decryptRequest(body) {
     Buffer.from(encrypted_aes_key, "base64")
   );
 
-  // 🔐 decrypt payload
   const decipher = crypto.createDecipheriv(
     "aes-256-cbc",
     aesKey,
@@ -32,24 +31,19 @@ function decryptRequest(body) {
   let decrypted = decipher.update(encrypted_flow_data, "base64", "utf8");
   decrypted += decipher.final("utf8");
 
-  const parsed = JSON.parse(decrypted);
-
-  // نخزن مفاتيح مهمة للرد
-  parsed._aesKey = aesKey;
-  parsed._iv = Buffer.from(initial_vector, "base64");
-
-  return parsed;
+  return {
+    data: JSON.parse(decrypted),
+    aesKey,
+    iv: Buffer.from(initial_vector, "base64")
+  };
 }
 
-// ===== ENCRYPT (IMPORTANT FIX) =====
-function encryptResponse(payload, decryptedRequest) {
-  const key = decryptedRequest._aesKey;
-  const iv = decryptedRequest._iv;
-
+// ===== ENCRYPT (FIXED 100%) =====
+function encryptResponse(payload, encryptionData) {
   const cipher = crypto.createCipheriv(
     "aes-256-cbc",
-    key,
-    iv
+    encryptionData.aesKey,
+    encryptionData.iv
   );
 
   let encrypted = cipher.update(
@@ -60,19 +54,11 @@ function encryptResponse(payload, decryptedRequest) {
 
   encrypted += cipher.final("base64");
 
-  // 🔥 لازم ترجع STRING فقط
+  // ⚠️ لازم string فقط
   return encrypted;
-}
-
-class FlowEndpointException extends Error {
-  constructor(statusCode) {
-    super("Flow Error");
-    this.statusCode = statusCode;
-  }
 }
 
 module.exports = {
   decryptRequest,
-  encryptResponse,
-  FlowEndpointException
+  encryptResponse
 };
