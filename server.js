@@ -1,66 +1,73 @@
-const express = require("express");
-const {
-  decryptRequest,
-  encryptResponse,
-  FlowEndpointException
-} = require("./flowCrypto");
+const crypto = require("crypto");
 
-const app = express();
-app.use(express.json({ limit: "2mb" }));
+// ===== SAFE DECRYPT =====
+function decryptRequest(body) {
+    if (!body) throw new Error("Empty body");
 
-app.get("/", (req, res) => {
-  res.send("Server is running");
-});
+    const {
+        encrypted_flow_data,
+        encrypted_aes_key,
+        initial_vector
+    } = body;
 
-app.post("/webhook", (req, res) => {
-  try {
-    console.log("Incoming Flow Request");
-
-    // 🔐 فك التشفير
-    const decrypted = decryptRequest(req.body);
-
-    console.log("Decrypted:", JSON.stringify(decrypted, null, 2));
-
-    const { version, action } = decrypted;
-
-    // ===== INIT =====
-    if (action === "INIT") {
-      const response = {
-        version,
-        screen: "LOAN",
-        data: {
-          title: "Loan Flow Working 🚀",
-          amount: "720000",
-          status: "active"
-        }
-      };
-
-      return res.send(encryptResponse(response, decrypted));
+    if (!encrypted_flow_data || !encrypted_aes_key || !initial_vector) {
+        throw new Error("Missing encrypted fields");
     }
 
-    // ===== DEFAULT =====
-    const response = {
-      version,
-      screen: "LOAN",
-      data: {
-        title: "OK",
-        amount: "720000"
-      }
-    };
+    const privateKey = (process.env.PRIVATE_KEY || "").replace(/\\n/g, "\n");
+    const passphrase = process.env.PASSPHRASE || undefined;
 
-    return res.send(encryptResponse(response, decrypted));
+    const aesKey = crypto.privateDecrypt(
+        {
+            key: privateKey,
+            passphrase,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: "sha256"
+        },
+        Buffer.from(encrypted_aes_key, "base64")
+    );
 
-  } catch (err) {
-    console.error("FLOW ERROR:", err);
+    const decipher = crypto.createDecipheriv(
+        "aes-256-cbc",
+        aesKey,
+        Buffer.from(initial_vector, "base64")
+    );
 
-    if (err instanceof FlowEndpointException) {
-      return res.status(err.statusCode).send();
+    let decrypted = decipher.update(encrypted_flow_data, "base64", "utf8");
+    decrypted += decipher.final("utf8");
+
+    const parsed = JSON.parse(decrypted);
+
+    parsed._aesKey = aesKey;
+    parsed._iv = Buffer.from(initial_vector, "base64");
+
+    return parsed;
+}
+
+// ===== SAFE ENCRYPT =====
+function encryptResponse(payload, ctx) {
+    if (!ctx || !ctx._aesKey || !ctx._iv) {
+        throw new Error("Missing AES context");
     }
 
-    // 🔥 مهم: لا ترجع 500 حقيقي لMeta
-    return res.status(200).send("error-safe");
-  }
-});
+    const cipher = crypto.createCipheriv(
+        "aes-256-cbc",
+        ctx._aesKey,
+        ctx._iv
+    );
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Running on " + PORT));
+    let encrypted = cipher.update(
+        JSON.stringify(payload),
+        "utf8",
+        "base64"
+    );
+
+    encrypted += cipher.final("base64");
+
+    return encrypted;
+}
+
+module.exports = {
+    decryptRequest,
+    encryptResponse
+};
