@@ -1,13 +1,14 @@
 const crypto = require("crypto");
 
-// ================= GET PRIVATE KEY =================
+// ================= PRIVATE KEY =================
 function getPrivateKey() {
   const key = process.env.PRIVATE_KEY;
 
   if (!key) {
-    throw new Error("PRIVATE_KEY missing in environment variables");
+    throw new Error("PRIVATE_KEY missing in environment");
   }
 
+  // مهم: تحويل \n إلى newline الحقيقي
   return key.replace(/\\n/g, "\n");
 }
 
@@ -22,8 +23,8 @@ function decryptRequest(body) {
   const privateKey = getPrivateKey();
   const passphrase = process.env.PASSPHRASE || undefined;
 
-  // 🔑 decrypt AES key from Meta
-  const aesKeyRaw = crypto.privateDecrypt(
+  // 🔐 فك تشفير AES key (كما هو من Meta بدون أي تعديل)
+  const aesKey = crypto.privateDecrypt(
     {
       key: privateKey,
       passphrase,
@@ -33,11 +34,7 @@ function decryptRequest(body) {
     Buffer.from(encrypted_aes_key, "base64")
   );
 
-  // 🔥 FIX: force correct AES-256 key length (32 bytes)
-  const aesKey = Buffer.alloc(32);
-  aesKeyRaw.copy(aesKey, 0, 0, 32);
-
-  // 🔓 decrypt payload
+  // 🔓 فك تشفير البيانات
   const decipher = crypto.createDecipheriv(
     "aes-256-cbc",
     aesKey,
@@ -52,23 +49,17 @@ function decryptRequest(body) {
 
   decrypted += decipher.final("utf8");
 
-  const parsed = JSON.parse(decrypted);
-
-  return {
-    ...parsed,
-    aes_key: aesKey,
-    initial_vector: Buffer.from(initial_vector, "base64")
-  };
+  return JSON.parse(decrypted);
 }
 
 // ================= ENCRYPT RESPONSE =================
 function encryptResponse(payload, decryptedRequest) {
-  const key = decryptedRequest.aes_key;
+  const aesKey = decryptedRequest.aes_key;
   const iv = decryptedRequest.initial_vector;
 
   const cipher = crypto.createCipheriv(
     "aes-256-cbc",
-    key,
+    aesKey,
     iv
   );
 
@@ -80,10 +71,10 @@ function encryptResponse(payload, decryptedRequest) {
 
   encrypted += cipher.final("base64");
 
-  return encrypted; // 🔥 MUST be Base64 string only
+  return encrypted; // 🔥 MUST be Base64 ONLY
 }
 
-// ================= FLOW EXCEPTION =================
+// ================= ERROR CLASS =================
 class FlowEndpointException extends Error {
   constructor(statusCode) {
     super("Flow Error");
