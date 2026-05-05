@@ -1,11 +1,11 @@
 const crypto = require("crypto");
 
-// ================= PRIVATE KEY =================
+// ================= GET PRIVATE KEY =================
 function getPrivateKey() {
   const key = process.env.PRIVATE_KEY;
 
   if (!key) {
-    throw new Error("PRIVATE_KEY missing in environment");
+    throw new Error("PRIVATE_KEY missing in environment variables");
   }
 
   return key.replace(/\\n/g, "\n");
@@ -40,7 +40,12 @@ function decryptRequest(body) {
     Buffer.from(initial_vector, "base64")
   );
 
-  let decrypted = decipher.update(encrypted_flow_data, "base64", "utf8");
+  let decrypted = decipher.update(
+    encrypted_flow_data,
+    "base64",
+    "utf8"
+  );
+
   decrypted += decipher.final("utf8");
 
   const parsed = JSON.parse(decrypted);
@@ -57,7 +62,11 @@ function encryptResponse(payload, decryptedRequest) {
   const key = decryptedRequest.aes_key;
   const iv = decryptedRequest.initial_vector;
 
-  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+  const cipher = crypto.createCipheriv(
+    "aes-256-cbc",
+    key,
+    iv
+  );
 
   let encrypted = cipher.update(
     JSON.stringify(payload),
@@ -67,7 +76,7 @@ function encryptResponse(payload, decryptedRequest) {
 
   encrypted += cipher.final("base64");
 
-  return encrypted;
+  return encrypted; // 🔥 MUST return Base64 string ONLY
 }
 
 // ================= ERROR CLASS =================
