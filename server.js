@@ -10,20 +10,29 @@ const {
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
-// ===== HEALTH CHECK =====
+// ===== HEALTH CHECK (IMPORTANT) =====
 app.get("/", (req, res) => {
-  res.send("Server is running");
+  res.send("OK");
 });
 
-// ===== WEBHOOK / FLOW ENDPOINT =====
+// ===== WEBHOOK =====
 app.post("/webhook", (req, res) => {
   try {
-    console.log("📩 Incoming Flow Request");
+    console.log("📩 Incoming request:", req.body);
 
-    // 🔐 decrypt request from Meta
+    // 🔥 حماية: إذا البيانات ناقصة لا تكسر السيرفر
+    if (!req.body || !req.body.encrypted_flow_data) {
+      console.log("⚠️ Invalid request - skipping decrypt");
+
+      return res.json({
+        status: "ignored"
+      });
+    }
+
+    // 🔐 فك التشفير
     const decrypted = decryptRequest(req.body);
 
-    console.log("🔓 Decrypted:", decrypted);
+    console.log("🔓 Decrypted OK");
 
     const { version, action } = decrypted;
 
@@ -33,7 +42,7 @@ app.post("/webhook", (req, res) => {
         version,
         screen: "LOAN",
         data: {
-          title: "Render Flow Working 🚀",
+          title: "Meta Flow Working 🚀",
           amount: "720000",
           status: "active"
         }
@@ -63,12 +72,13 @@ app.post("/webhook", (req, res) => {
       return res.status(err.statusCode).send();
     }
 
-    return res.status(500).send("error");
+    // 🔥 مهم جدًا: لا ترجع HTML error
+    return res.status(200).send("error-safe");
   }
 });
 
-// ===== START SERVER =====
+// ===== START =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("🚀 Server running on port " + PORT);
+  console.log("🚀 Running on port " + PORT);
 });
