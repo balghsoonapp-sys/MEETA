@@ -11,7 +11,7 @@ function getPrivateKey() {
   return key.replace(/\\n/g, "\n");
 }
 
-// ================= DECRYPT =================
+// ================= DECRYPT REQUEST =================
 function decryptRequest(body) {
   const {
     encrypted_flow_data,
@@ -22,8 +22,8 @@ function decryptRequest(body) {
   const privateKey = getPrivateKey();
   const passphrase = process.env.PASSPHRASE || undefined;
 
-  // 🔑 decrypt AES key
-  const aesKey = crypto.privateDecrypt(
+  // 🔑 decrypt AES key from Meta
+  const aesKeyRaw = crypto.privateDecrypt(
     {
       key: privateKey,
       passphrase,
@@ -32,6 +32,10 @@ function decryptRequest(body) {
     },
     Buffer.from(encrypted_aes_key, "base64")
   );
+
+  // 🔥 FIX: force correct AES-256 key length (32 bytes)
+  const aesKey = Buffer.alloc(32);
+  aesKeyRaw.copy(aesKey, 0, 0, 32);
 
   // 🔓 decrypt payload
   const decipher = crypto.createDecipheriv(
@@ -57,7 +61,7 @@ function decryptRequest(body) {
   };
 }
 
-// ================= ENCRYPT =================
+// ================= ENCRYPT RESPONSE =================
 function encryptResponse(payload, decryptedRequest) {
   const key = decryptedRequest.aes_key;
   const iv = decryptedRequest.initial_vector;
@@ -76,10 +80,10 @@ function encryptResponse(payload, decryptedRequest) {
 
   encrypted += cipher.final("base64");
 
-  return encrypted; // 🔥 MUST return Base64 string ONLY
+  return encrypted; // 🔥 MUST be Base64 string only
 }
 
-// ================= ERROR CLASS =================
+// ================= FLOW EXCEPTION =================
 class FlowEndpointException extends Error {
   constructor(statusCode) {
     super("Flow Error");
