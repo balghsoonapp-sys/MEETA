@@ -1,12 +1,12 @@
 const express = require("express");
-const { encryptResponse } = require("./encryption");
+const { encryptResponse, decryptRequest } = require("./encryption");
 
 const app = express();
 app.use(express.json());
 
-// ===== VERIFY META FLOW =====
+// ================= VERIFY WEBHOOK =================
 app.get("/webhook", (req, res) => {
-    const VERIFY_TOKEN = "my_verify_token";
+    const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
 
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -16,29 +16,52 @@ app.get("/webhook", (req, res) => {
         return res.status(200).send(challenge);
     }
 
-    res.sendStatus(403);
+    return res.sendStatus(403);
 });
 
-// ===== FLOW ENDPOINT =====
+// ================= FLOW ENDPOINT =================
 app.post("/webhook", (req, res) => {
-    console.log("Flow Request:", req.body);
+    try {
+        const decrypted = decryptRequest(req.body);
 
-    const response = {
-        screen: "LOAN",
-        data: {
-            title: "Hello from Render Flow",
-            amount: "720000",
-            status: "active"
+        const { action, data } = decrypted;
+
+        // ===== INIT =====
+        if (action === "INIT") {
+            return res.send(
+                encryptResponse({
+                    screen: "LOAN",
+                    data: {
+                        title: "Pre Approved Loan",
+                        amount: "720000",
+                        tenure: "48",
+                        emi: "18000"
+                    }
+                }, decrypted)
+            );
         }
-    };
 
-    const encrypted = encryptResponse(response);
+        // ===== DATA EXCHANGE =====
+        if (action === "data_exchange") {
+            return res.send(
+                encryptResponse({
+                    screen: "DETAILS",
+                    data: {
+                        status: "updated"
+                    }
+                }, decrypted)
+            );
+        }
 
-    // 🔥 مهم جداً: لازم نص مش JSON
-    res.send(encrypted);
+        return res.sendStatus(200);
+
+    } catch (e) {
+        console.error(e);
+        return res.sendStatus(500);
+    }
 });
 
-// ===== HEALTH CHECK =====
+// ================= HEALTH =================
 app.get("/", (req, res) => {
     res.send("Server is running");
 });
