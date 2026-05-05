@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-flows",
+  "name": "meta-whatsapp-flows",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
