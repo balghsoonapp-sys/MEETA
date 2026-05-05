@@ -1,41 +1,21 @@
 const crypto = require("crypto");
 
-// ================= DECRYPT REQUEST =================
-function decryptRequest(body) {
-    // Meta sends encrypted payload already handled by SDK in real setup
-    // هنا simplified لأنك في backend تجريبي
+function encryptResponse(payload, aesKeyBase64, ivBase64) {
+    const key = Buffer.from(aesKeyBase64, "base64");
+    const iv = Buffer.from(ivBase64, "base64");
 
-    return body; // في الإنتاج تستخدم decrypt الحقيقي من Meta sample
-}
-
-// ================= ENCRYPT RESPONSE =================
-function encryptResponse(payload, requestMeta) {
-    const json = JSON.stringify(payload);
-
-    const aesKey = requestMeta?.aesKeyBuffer;
-    const iv = requestMeta?.initialVectorBuffer;
-
-    if (!aesKey || !iv) {
-        throw new Error("Missing AES key or IV from request");
-    }
+    const plaintext = JSON.stringify(payload);
 
     const cipher = crypto.createCipheriv(
-        "aes-256-gcm",
-        aesKey,
+        "aes-256-cbc",
+        key,
         iv
     );
 
-    const encrypted = Buffer.concat([
-        cipher.update(json, "utf8"),
-        cipher.final()
-    ]);
+    let encrypted = cipher.update(plaintext, "utf8", "base64");
+    encrypted += cipher.final("base64");
 
-    const authTag = cipher.getAuthTag();
-
-    return Buffer.concat([encrypted, authTag]).toString("base64");
+    return encrypted;
 }
 
-module.exports = {
-    encryptResponse,
-    decryptRequest
-};
+module.exports = { encryptResponse };
