@@ -1,12 +1,16 @@
 const crypto = require("crypto");
 
-// ================= DECRYPT =================
+// ===== DECRYPT =====
 function decryptRequest(body) {
     const {
         encrypted_flow_data,
         encrypted_aes_key,
         initial_vector
     } = body;
+
+    if (!encrypted_flow_data || !encrypted_aes_key || !initial_vector) {
+        throw new Error("Missing encrypted payload fields");
+    }
 
     const privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
     const passphrase = process.env.PASSPHRASE || undefined;
@@ -27,21 +31,26 @@ function decryptRequest(body) {
         Buffer.from(initial_vector, "base64")
     );
 
-    let decrypted = decipher.update(
-        encrypted_flow_data,
-        "base64",
-        "utf8"
-    );
-
+    let decrypted = decipher.update(encrypted_flow_data, "base64", "utf8");
     decrypted += decipher.final("utf8");
 
-    return JSON.parse(decrypted);
+    const parsed = JSON.parse(decrypted);
+
+    // 🔥 نخزن مفاتيح التشفير للاستخدام لاحقًا
+    parsed._aesKey = aesKey;
+    parsed._iv = Buffer.from(initial_vector, "base64");
+
+    return parsed;
 }
 
-// ================= ENCRYPT =================
+// ===== ENCRYPT =====
 function encryptResponse(payload, decryptedRequest) {
-    const aesKey = decryptedRequest.aes_key;
-    const iv = decryptedRequest.initial_vector;
+    const aesKey = decryptedRequest._aesKey;
+    const iv = decryptedRequest._iv;
+
+    if (!aesKey || !iv) {
+        throw new Error("Missing AES context from decrypted request");
+    }
 
     const cipher = crypto.createCipheriv(
         "aes-256-cbc",
