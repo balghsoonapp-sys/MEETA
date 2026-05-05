@@ -12,18 +12,18 @@ app.get("/", (req, res) => {
   res.send("Server is running");
 });
 
-app.post("/webhook", async (req, res) => {
+app.post("/webhook", (req, res) => {
   try {
     console.log("Incoming Flow Request");
 
-    // 🔐 1. فك التشفير (هذا إلزامي)
+    // 🔐 فك التشفير
     const decrypted = decryptRequest(req.body);
 
     console.log("Decrypted:", JSON.stringify(decrypted, null, 2));
 
-    const { screen, data, version, action } = decrypted;
+    const { version, action } = decrypted;
 
-    // ===== INIT REQUEST =====
+    // ===== INIT =====
     if (action === "INIT") {
       const response = {
         version,
@@ -35,8 +35,7 @@ app.post("/webhook", async (req, res) => {
         }
       };
 
-      const encrypted = encryptResponse(response, decrypted);
-      return res.send(encrypted);
+      return res.send(encryptResponse(response, decrypted));
     }
 
     // ===== DEFAULT =====
@@ -49,17 +48,17 @@ app.post("/webhook", async (req, res) => {
       }
     };
 
-    const encrypted = encryptResponse(response, decrypted);
-    return res.send(encrypted);
+    return res.send(encryptResponse(response, decrypted));
 
   } catch (err) {
-    console.error("ERROR:", err);
+    console.error("FLOW ERROR:", err);
 
     if (err instanceof FlowEndpointException) {
       return res.status(err.statusCode).send();
     }
 
-    return res.status(500).send("error");
+    // 🔥 مهم: لا ترجع 500 حقيقي لMeta
+    return res.status(200).send("error-safe");
   }
 });
 
