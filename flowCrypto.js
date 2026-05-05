@@ -8,7 +8,6 @@ function getPrivateKey() {
     throw new Error("PRIVATE_KEY missing in environment");
   }
 
-  // مهم: تحويل \n إلى newline الحقيقي
   return key.replace(/\\n/g, "\n");
 }
 
@@ -23,7 +22,7 @@ function decryptRequest(body) {
   const privateKey = getPrivateKey();
   const passphrase = process.env.PASSPHRASE || undefined;
 
-  // 🔐 فك تشفير AES key (كما هو من Meta بدون أي تعديل)
+  // 🔐 فك AES key من Meta (RSA)
   const aesKey = crypto.privateDecrypt(
     {
       key: privateKey,
@@ -33,6 +32,11 @@ function decryptRequest(body) {
     },
     Buffer.from(encrypted_aes_key, "base64")
   );
+
+  // ================= DEBUG (مهم جدًا للتشخيص) =================
+  console.log("🔍 AES KEY LENGTH:", aesKey.length);
+  console.log("🔍 IV LENGTH:", Buffer.from(initial_vector, "base64").length);
+  console.log("🔍 HAS FLOW DATA:", !!encrypted_flow_data);
 
   // 🔓 فك تشفير البيانات
   const decipher = crypto.createDecipheriv(
@@ -71,7 +75,7 @@ function encryptResponse(payload, decryptedRequest) {
 
   encrypted += cipher.final("base64");
 
-  return encrypted; // 🔥 MUST be Base64 ONLY
+  return encrypted;
 }
 
 // ================= ERROR CLASS =================
