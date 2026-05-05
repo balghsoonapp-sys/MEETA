@@ -11,7 +11,10 @@ function getPrivateKey() {
   const privateKey = process.env.PRIVATE_KEY;
 
   if (!privateKey) {
-    throw new Error("PRIVATE_KEY is missing in Render Environment Variables");
+    throw new FlowEndpointException(
+      421,
+      "PRIVATE_KEY is missing in Render Environment Variables"
+    );
   }
 
   return privateKey.replace(/\\n/g, "\n");
@@ -45,10 +48,29 @@ function decryptRequest(body) {
     initialVectorBuffer = Buffer.from(initial_vector, "base64");
     flowDataBuffer = Buffer.from(encrypted_flow_data, "base64");
   } catch (error) {
-    throw new FlowEndpointException(421, `RSA/base64 decrypt failed: ${error.message}`);
+    throw new FlowEndpointException(
+      421,
+      `RSA/base64 decrypt failed: ${error.message}`
+    );
   }
 
-  // WhatsApp Flows uses AES-GCM; auth tag is appended at the end.
+  console.log("🔍 AES key length:", aesKeyBuffer.length);
+  console.log("🔍 IV length:", initialVectorBuffer.length);
+
+  if (aesKeyBuffer.length !== 16) {
+    throw new FlowEndpointException(
+      421,
+      `Invalid AES key length. Expected 16 bytes, got ${aesKeyBuffer.length}`
+    );
+  }
+
+  if (initialVectorBuffer.length !== 16) {
+    throw new FlowEndpointException(
+      421,
+      `Invalid IV length. Expected 16 bytes, got ${initialVectorBuffer.length}`
+    );
+  }
+
   const TAG_LENGTH = 16;
   const encryptedFlowDataBody = flowDataBuffer.subarray(0, -TAG_LENGTH);
   const encryptedFlowDataTag = flowDataBuffer.subarray(-TAG_LENGTH);
@@ -69,7 +91,10 @@ function decryptRequest(body) {
       decipher.final(),
     ]).toString("utf8");
   } catch (error) {
-    throw new FlowEndpointException(421, `AES-GCM decrypt failed: ${error.message}`);
+    throw new FlowEndpointException(
+      421,
+      `AES-GCM decrypt failed: ${error.message}`
+    );
   }
 
   let decryptedBody;
@@ -77,7 +102,10 @@ function decryptRequest(body) {
   try {
     decryptedBody = JSON.parse(decryptedJSONString);
   } catch (error) {
-    throw new FlowEndpointException(421, `Invalid decrypted JSON: ${error.message}`);
+    throw new FlowEndpointException(
+      421,
+      `Invalid decrypted JSON: ${error.message}`
+    );
   }
 
   return {
@@ -91,10 +119,9 @@ function encryptResponse(responsePayload, decryptedRequest) {
   const { aesKeyBuffer, initialVectorBuffer } = decryptedRequest;
 
   if (!aesKeyBuffer || !initialVectorBuffer) {
-    throw new Error("Missing AES key or IV context for response encryption");
+    throw new Error("Missing AES context for response encryption");
   }
 
-  // Meta requires flipping all bits of request IV for response encryption.
   const flippedIV = Buffer.from(
     initialVectorBuffer.map((byte) => byte ^ 0xff)
   );
@@ -112,7 +139,6 @@ function encryptResponse(responsePayload, decryptedRequest) {
 
   const authTag = cipher.getAuthTag();
 
-  // Return ciphertext + auth tag as Base64 string only.
   return Buffer.concat([encryptedResponseBody, authTag]).toString("base64");
 }
 
