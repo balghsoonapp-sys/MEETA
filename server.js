@@ -18,16 +18,16 @@ app.get("/", (req, res) => {
 // ================= FLOW ENDPOINT =================
 app.post("/webhook", (req, res) => {
   try {
-    console.log("📩 Request received");
+    console.log("📩 Flow Request received");
 
-    // 🔥 حماية كاملة من الطلبات الفارغة (Meta health check)
+    // 🔥 حماية من requests الفارغة (Meta health check)
     if (
       !req.body ||
       !req.body.encrypted_flow_data ||
       !req.body.encrypted_aes_key ||
       !req.body.initial_vector
     ) {
-      console.log("⚠️ Invalid or health-check request ignored");
+      console.log("⚠️ Skipping invalid request");
       return res.status(200).send("OK");
     }
 
@@ -44,17 +44,17 @@ app.post("/webhook", (req, res) => {
         version,
         screen: "LOAN",
         data: {
-          title: "Production Flow Working 🚀",
+          title: "Meta Production Flow 🚀",
           amount: "720000",
           status: "active"
         }
       };
 
       const encrypted = encryptResponse(response, decrypted);
-      return res.send(encrypted);
+      return res.send(encrypted); // 🔥 MUST be Base64 only
     }
 
-    // ================= DEFAULT =================
+    // ================= DATA / DEFAULT =================
     const response = {
       version,
       screen: "LOAN",
@@ -74,13 +74,13 @@ app.post("/webhook", (req, res) => {
       return res.status(err.statusCode).send();
     }
 
-    // ⚠️ مهم جدًا: Meta ما يحب HTML errors
-    return res.status(200).send("error-safe");
+    // 🚨 IMPORTANT: NEVER return plain text
+    return res.status(200).send("OK");
   }
 });
 
-// ================= START SERVER =================
+// ================= START =================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("🚀 Production server running on port", PORT);
+  console.log("🚀 Meta Flow running on port", PORT);
 });
