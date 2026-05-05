@@ -1,9 +1,10 @@
 const express = require("express");
-const app = express();
+const { encryptResponse } = require("./encryption");
 
+const app = express();
 app.use(express.json());
 
-// ===== VERIFY WEBHOOK (مهم جداً لـ Meta) =====
+// ===== VERIFY META FLOW =====
 app.get("/webhook", (req, res) => {
     const VERIFY_TOKEN = "my_verify_token";
 
@@ -12,23 +13,35 @@ app.get("/webhook", (req, res) => {
     const challenge = req.query["hub.challenge"];
 
     if (mode === "subscribe" && token === VERIFY_TOKEN) {
-        console.log("Webhook verified");
         return res.status(200).send(challenge);
     }
 
     res.sendStatus(403);
 });
 
-// ===== RECEIVE MESSAGES =====
+// ===== FLOW ENDPOINT =====
 app.post("/webhook", (req, res) => {
-    console.log("Received:", JSON.stringify(req.body, null, 2));
-    res.json({ success: true });
+    console.log("Flow Request:", req.body);
+
+    const response = {
+        screen: "LOAN",
+        data: {
+            title: "Hello from Render Flow",
+            amount: "720000",
+            status: "active"
+        }
+    };
+
+    const encrypted = encryptResponse(response);
+
+    // 🔥 مهم جداً: لازم نص مش JSON
+    res.send(encrypted);
 });
 
-// ===== BASIC HEALTH CHECK =====
+// ===== HEALTH CHECK =====
 app.get("/", (req, res) => {
     res.send("Server is running");
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Running on port " + PORT));
+app.listen(PORT, () => console.log("Running on " + PORT));
