@@ -4,28 +4,24 @@ const { decryptRequest, encryptResponse } = require("./flowCrypto");
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
-app.get("/", (req, res) => {
-  res.send("OK");
-});
-
 app.post("/webhook", (req, res) => {
   try {
-    console.log("Incoming request");
+    console.log("Incoming");
 
-    // 🔥 مهم: لا تفك التشفير إلا إذا البيانات موجودة
-    const isEncrypted =
+    const hasEncryption =
       req.body &&
       req.body.encrypted_flow_data &&
       req.body.encrypted_aes_key &&
       req.body.initial_vector;
 
     let decrypted;
+    let encryptedContext = null;
 
-    if (isEncrypted) {
+    if (hasEncryption) {
       decrypted = decryptRequest(req.body);
-      console.log("Decrypted OK");
+      encryptedContext = decrypted;
     } else {
-      console.log("⚠️ Not encrypted request (INIT or test)");
+      // 🔥 حتى INIT لازم نفس شكل Flow (mock context)
       decrypted = {
         version: "7.3",
         action: "INIT",
@@ -44,22 +40,29 @@ app.post("/webhook", (req, res) => {
       }
     };
 
-    // 🔥 إذا request encrypted → نرجع encrypted
-    if (isEncrypted) {
-      const encrypted = encryptResponse(response, decrypted);
-      return res.status(200).send(encrypted);
+    // 🔥 أهم نقطة
+    if (hasEncryption) {
+      const encrypted = encryptResponse(response, encryptedContext);
+      return res.status(200).send(encrypted); // Base64 ONLY
     }
 
-    // 🔥 إذا INIT → نرجع JSON عادي (Meta تقبله في المرحلة الأولى)
-    return res.status(200).json(response);
+    // ❌ لا JSON، لا نص، لا error-safe
+    return res.status(200).send(
+      Buffer.from(JSON.stringify(response)).toString("base64")
+    );
 
   } catch (err) {
-    console.error("FLOW ERROR:", err);
+    console.error("ERROR:", err);
 
-    // مهم جداً: لا ترجع 500 لـ Meta
-    return res.status(200).send("error-safe");
+    // 🔥 fallback لازم يكون Base64 أيضًا
+    const fallback = Buffer.from(JSON.stringify({
+      version: "7.3",
+      screen: "LOAN",
+      data: { error: "safe fallback" }
+    })).toString("base64");
+
+    return res.status(200).send(fallback);
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Running on " + PORT));
+app.listen(process.env.PORT || 3000);
