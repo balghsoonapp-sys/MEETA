@@ -2,43 +2,28 @@ const express = require("express");
 const { decryptRequest, encryptResponse } = require("./flowCrypto");
 
 const app = express();
-
-// مهم جداً لتفادي مشاكل Meta
 app.use(express.json({ limit: "2mb" }));
 
-app.get("/", (req, res) => {
-  res.send("OK");
-});
+app.get("/", (req, res) => res.send("OK"));
 
 app.post("/webhook", (req, res) => {
   try {
+    console.log("REQUEST:", req.body);
+
+    if (!req.body) {
+      console.log("EMPTY BODY");
+      return res.sendStatus(400);
+    }
+
     const decrypted = decryptRequest(req.body);
 
     const { version, action } = decrypted;
 
-    // ===== INIT =====
-    if (action === "INIT") {
-      const response = {
-        version,
-        screen: "LOAN",
-        data: {
-          title: "Flow is Working 🚀",
-          amount: "720000",
-          status: "active"
-        }
-      };
-
-      const encrypted = encryptResponse(response, decrypted);
-
-      return res.status(200).send(encrypted);
-    }
-
-    // ===== DEFAULT =====
     const response = {
       version,
       screen: "LOAN",
       data: {
-        title: "OK",
+        title: "Working 🚀",
         amount: "720000"
       }
     };
@@ -48,10 +33,14 @@ app.post("/webhook", (req, res) => {
     return res.status(200).send(encrypted);
 
   } catch (err) {
-    console.error("FLOW ERROR:", err.message);
+    console.error("❌ FLOW CRASH:", err.message);
+    console.error(err.stack);
+
+    // ⚠️ مهم: لا ترجع JSON هنا
     return res.sendStatus(500);
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Running on", PORT));
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Server running");
+});
