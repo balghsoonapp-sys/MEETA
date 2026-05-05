@@ -1,51 +1,67 @@
 const express = require("express");
-const { encryptResponse } = require("./encryption");
+const {
+  decryptRequest,
+  encryptResponse,
+  FlowEndpointException
+} = require("./flowCrypto");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 app.get("/", (req, res) => {
-    res.send("Server is running");
+  res.send("Server is running");
 });
 
-app.post("/webhook", (req, res) => {
-    try {
-        console.log("RAW REQUEST:");
-        console.log(JSON.stringify(req.body, null, 2));
+app.post("/webhook", async (req, res) => {
+  try {
+    console.log("Incoming Flow Request");
 
-        // ⚠️ لا تفك aesKey من body (هذا سبب 500 عندك)
-        const {
-            version,
-            screen,
-            data
-        } = req.body;
+    // 🔐 1. فك التشفير (هذا إلزامي)
+    const decrypted = decryptRequest(req.body);
 
-        // رد ثابت للتجربة (بدون logic معقد)
-        const response = {
-            version: version || "7.3",
-            screen: "LOAN",
-            data: {
-                title: "Render + Meta Working 🎉",
-                amount: "720000",
-                status: "active"
-            }
-        };
+    console.log("Decrypted:", JSON.stringify(decrypted, null, 2));
 
-        // ⚠️ في Render تجريبي: نعيد JSON مباشرة أولاً للاختبار
-        const encrypted = encryptResponseSimple(response);
+    const { screen, data, version, action } = decrypted;
 
-        return res.send(encrypted);
+    // ===== INIT REQUEST =====
+    if (action === "INIT") {
+      const response = {
+        version,
+        screen: "LOAN",
+        data: {
+          title: "Loan Flow Working 🚀",
+          amount: "720000",
+          status: "active"
+        }
+      };
 
-    } catch (err) {
-        console.error("ERROR:", err);
-        return res.status(500).send("Internal Server Error");
+      const encrypted = encryptResponse(response, decrypted);
+      return res.send(encrypted);
     }
-});
 
-// ===== مؤقت للاختبار (بدون AES) =====
-function encryptResponseSimple(payload) {
-    return JSON.stringify(payload); // فقط للتأكد أن السيرفر يعمل
-}
+    // ===== DEFAULT =====
+    const response = {
+      version,
+      screen: "LOAN",
+      data: {
+        title: "OK",
+        amount: "720000"
+      }
+    };
+
+    const encrypted = encryptResponse(response, decrypted);
+    return res.send(encrypted);
+
+  } catch (err) {
+    console.error("ERROR:", err);
+
+    if (err instanceof FlowEndpointException) {
+      return res.status(err.statusCode).send();
+    }
+
+    return res.status(500).send("error");
+  }
+});
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Running on port " + PORT));
+app.listen(PORT, () => console.log("Running on " + PORT));
