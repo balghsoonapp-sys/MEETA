@@ -1,68 +1,68 @@
 const express = require("express");
-const { decryptRequest, encryptResponse } = require("./flowCrypto");
+const {
+  decryptRequest,
+  encryptResponse,
+  FlowEndpointException
+} = require("./flowCrypto");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
 app.post("/webhook", (req, res) => {
   try {
-    console.log("Incoming");
+    console.log("Incoming Flow Request:", req.body);
 
-    const hasEncryption =
-      req.body &&
-      req.body.encrypted_flow_data &&
-      req.body.encrypted_aes_key &&
-      req.body.initial_vector;
+    const decrypted = decryptRequest(req.body);
 
-    let decrypted;
-    let encryptedContext = null;
+    const { version, action } = decrypted;
 
-    if (hasEncryption) {
-      decrypted = decryptRequest(req.body);
-      encryptedContext = decrypted;
-    } else {
-      // 🔥 حتى INIT لازم نفس شكل Flow (mock context)
-      decrypted = {
-        version: "7.3",
-        action: "INIT",
-        _aesKey: null,
-        _iv: null
+    // ===== INIT =====
+    if (action === "INIT") {
+      const response = {
+        version,
+        screen: "LOAN",
+        data: {
+          title: "Render Flow Working 🚀",
+          amount: "720000",
+          status: "active"
+        }
       };
+
+      const encrypted = encryptResponse(response, decrypted);
+
+      // 🔥 لازم نص فقط
+      return res.status(200).send(encrypted);
     }
 
+    // ===== DEFAULT =====
     const response = {
-      version: decrypted.version || "7.3",
+      version,
       screen: "LOAN",
       data: {
-        title: "Render Flow Working 🚀",
-        amount: "720000",
-        status: "active"
+        title: "OK",
+        amount: "720000"
       }
     };
 
-    // 🔥 أهم نقطة
-    if (hasEncryption) {
-      const encrypted = encryptResponse(response, encryptedContext);
-      return res.status(200).send(encrypted); // Base64 ONLY
-    }
+    const encrypted = encryptResponse(response, decrypted);
 
-    // ❌ لا JSON، لا نص، لا error-safe
-    return res.status(200).send(
-      Buffer.from(JSON.stringify(response)).toString("base64")
-    );
+    return res.status(200).send(encrypted);
 
   } catch (err) {
     console.error("ERROR:", err);
 
-    // 🔥 fallback لازم يكون Base64 أيضًا
-    const fallback = Buffer.from(JSON.stringify({
-      version: "7.3",
-      screen: "LOAN",
-      data: { error: "safe fallback" }
-    })).toString("base64");
+    if (err instanceof FlowEndpointException) {
+      return res.sendStatus(err.statusCode);
+    }
 
-    return res.status(200).send(fallback);
+    // مهم جدًا
+    return res.sendStatus(500);
   }
 });
 
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Running on", PORT));
