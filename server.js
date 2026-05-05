@@ -4,83 +4,127 @@ require("dotenv").config();
 const {
   decryptRequest,
   encryptResponse,
-  FlowEndpointException
+  FlowEndpointException,
 } = require("./flowCrypto");
 
 const app = express();
+
 app.use(express.json({ limit: "2mb" }));
 
-// ================= HEALTH CHECK =================
 app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
 
-// ================= FLOW ENDPOINT =================
-app.post("/webhook", (req, res) => {
+app.post("/webhook", async (req, res) => {
+  let decryptedRequest;
+
   try {
     console.log("📩 Flow Request received");
 
-    // 🔥 حماية من requests الفارغة (Meta health check)
-    if (
-      !req.body ||
-      !req.body.encrypted_flow_data ||
-      !req.body.encrypted_aes_key ||
-      !req.body.initial_vector
-    ) {
-      console.log("⚠️ Skipping invalid request");
-      return res.status(200).send("OK");
+    decryptedRequest = decryptRequest(req.body);
+
+    console.log("🔓 Decrypted request:", JSON.stringify(decryptedRequest.decryptedBody, null, 2));
+
+    const { version, action, screen, data, flow_token } = decryptedRequest.decryptedBody;
+
+    let responsePayload;
+
+    // WhatsApp health check
+    if (action === "ping") {
+      responsePayload = {
+        version,
+        data: {
+          status: "active",
+        },
+      };
+
+      return res
+        .status(200)
+        .type("text/plain")
+        .send(encryptResponse(responsePayload, decryptedRequest));
     }
 
-    // 🔐 decrypt request
-    const decrypted = decryptRequest(req.body);
+    // Error notification acknowledgement
+    if (data && data.error) {
+      responsePayload = {
+        version,
+        data: {
+          acknowledged: true,
+        },
+      };
 
-    const { version, action } = decrypted;
+      return res
+        .status(200)
+        .type("text/plain")
+        .send(encryptResponse(responsePayload, decryptedRequest));
+    }
 
-    console.log("🔓 Action:", action);
-
-    // ================= INIT =================
+    // Initial opening of Flow
     if (action === "INIT") {
-      const response = {
+      responsePayload = {
         version,
         screen: "LOAN",
         data: {
-          title: "Meta Production Flow 🚀",
+          title: "Meta Flow Working",
           amount: "720000",
-          status: "active"
-        }
+          status: "active",
+        },
       };
 
-      const encrypted = encryptResponse(response, decrypted);
-      return res.send(encrypted); // 🔥 MUST be Base64 only
+      return res
+        .status(200)
+        .type("text/plain")
+        .send(encryptResponse(responsePayload, decryptedRequest));
     }
 
-    // ================= DATA / DEFAULT =================
-    const response = {
-      version,
+    // User submits screen / data_exchange
+    if (action === "data_exchange") {
+      responsePayload = {
+        version,
+        screen: "LOAN",
+        data: {
+          title: "تم استلام البيانات",
+          amount: "720000",
+          status: "active",
+        },
+      };
+
+      return res
+        .status(200)
+        .type("text/plain")
+        .send(encryptResponse(responsePayload, decryptedRequest));
+    }
+
+    // Fallback valid encrypted response
+    responsePayload = {
+      version: version || "3.0",
       screen: "LOAN",
       data: {
         title: "OK",
-        amount: "720000"
-      }
+        amount: "720000",
+        status: "active",
+      },
     };
 
-    const encrypted = encryptResponse(response, decrypted);
-    return res.send(encrypted);
+    return res
+      .status(200)
+      .type("text/plain")
+      .send(encryptResponse(responsePayload, decryptedRequest));
 
-  } catch (err) {
-    console.error("❌ FLOW ERROR:", err);
+  } catch (error) {
+    console.error("❌ FLOW ERROR:", error);
 
-    if (err instanceof FlowEndpointException) {
-      return res.status(err.statusCode).send();
+    if (error instanceof FlowEndpointException) {
+      return res.sendStatus(error.statusCode);
     }
 
-    // 🚨 IMPORTANT: NEVER return plain text
-    return res.status(200).send("OK");
+    // Meta recommends 421 if request cannot be decrypted.
+    return res.sendStatus(421);
   }
 });
 
-// ================= START =================
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log("🚀 Meta Flow running on port", PORT);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
