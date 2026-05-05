@@ -1,17 +1,21 @@
 const crypto = require("crypto");
 
-// ===== DECRYPT =====
 function decryptRequest(body) {
+  if (!body) throw new Error("No body received");
+
   const {
     encrypted_flow_data,
     encrypted_aes_key,
     initial_vector
   } = body;
 
+  if (!encrypted_flow_data || !encrypted_aes_key || !initial_vector) {
+    throw new Error("Missing encrypted fields");
+  }
+
   const privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
   const passphrase = process.env.PASSPHRASE || undefined;
 
-  // RSA decrypt AES key
   const aesKey = crypto.privateDecrypt(
     {
       key: privateKey,
@@ -22,36 +26,27 @@ function decryptRequest(body) {
     Buffer.from(encrypted_aes_key, "base64")
   );
 
-  // AES decrypt data
   const decipher = crypto.createDecipheriv(
     "aes-256-cbc",
     aesKey,
     Buffer.from(initial_vector, "base64")
   );
 
-  let decrypted = decipher.update(
-    encrypted_flow_data,
-    "base64",
-    "utf8"
-  );
-
+  let decrypted = decipher.update(encrypted_flow_data, "base64", "utf8");
   decrypted += decipher.final("utf8");
 
-  const parsed = JSON.parse(decrypted);
-
   return {
-    ...parsed,
+    ...JSON.parse(decrypted),
     aesKey,
     iv: Buffer.from(initial_vector, "base64")
   };
 }
 
-// ===== ENCRYPT =====
-function encryptResponse(payload, decryptedRequest) {
+function encryptResponse(payload, req) {
   const cipher = crypto.createCipheriv(
     "aes-256-cbc",
-    decryptedRequest.aesKey,
-    decryptedRequest.iv
+    req.aesKey,
+    req.iv
   );
 
   let encrypted = cipher.update(
@@ -62,7 +57,7 @@ function encryptResponse(payload, decryptedRequest) {
 
   encrypted += cipher.final("base64");
 
-  return encrypted; // ⚠️ لازم string فقط
+  return encrypted;
 }
 
 module.exports = {
