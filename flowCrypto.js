@@ -5,13 +5,13 @@ function getPrivateKey() {
   const key = process.env.PRIVATE_KEY;
 
   if (!key) {
-    throw new Error("PRIVATE_KEY missing in environment");
+    throw new Error("PRIVATE_KEY missing");
   }
 
   return key.replace(/\\n/g, "\n");
 }
 
-// ================= DECRYPT REQUEST =================
+// ================= DECRYPT =================
 function decryptRequest(body) {
   const {
     encrypted_flow_data,
@@ -22,7 +22,7 @@ function decryptRequest(body) {
   const privateKey = getPrivateKey();
   const passphrase = process.env.PASSPHRASE || undefined;
 
-  // 🔐 فك AES key من Meta (RSA)
+  // 🔐 RSA decrypt (لا تعديل عليه)
   const aesKey = crypto.privateDecrypt(
     {
       key: privateKey,
@@ -33,16 +33,22 @@ function decryptRequest(body) {
     Buffer.from(encrypted_aes_key, "base64")
   );
 
-  // ================= DEBUG (مهم جدًا للتشخيص) =================
-  console.log("🔍 AES KEY LENGTH:", aesKey.length);
-  console.log("🔍 IV LENGTH:", Buffer.from(initial_vector, "base64").length);
-  console.log("🔍 HAS FLOW DATA:", !!encrypted_flow_data);
+  // 🔥 FIX مهم جدًا: تأكد الطول قبل الاستخدام
+  if (aesKey.length !== 32) {
+    throw new Error(`Invalid AES key length: ${aesKey.length}`);
+  }
 
-  // 🔓 فك تشفير البيانات
+  const iv = Buffer.from(initial_vector, "base64");
+
+  if (iv.length !== 16) {
+    throw new Error(`Invalid IV length: ${iv.length}`);
+  }
+
+  // 🔓 decrypt payload
   const decipher = crypto.createDecipheriv(
     "aes-256-cbc",
     aesKey,
-    Buffer.from(initial_vector, "base64")
+    iv
   );
 
   let decrypted = decipher.update(
@@ -56,7 +62,7 @@ function decryptRequest(body) {
   return JSON.parse(decrypted);
 }
 
-// ================= ENCRYPT RESPONSE =================
+// ================= ENCRYPT =================
 function encryptResponse(payload, decryptedRequest) {
   const aesKey = decryptedRequest.aes_key;
   const iv = decryptedRequest.initial_vector;
@@ -78,16 +84,7 @@ function encryptResponse(payload, decryptedRequest) {
   return encrypted;
 }
 
-// ================= ERROR CLASS =================
-class FlowEndpointException extends Error {
-  constructor(statusCode) {
-    super("Flow Error");
-    this.statusCode = statusCode;
-  }
-}
-
 module.exports = {
   decryptRequest,
-  encryptResponse,
-  FlowEndpointException
+  encryptResponse
 };
