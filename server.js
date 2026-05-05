@@ -1,69 +1,49 @@
 const express = require("express");
-const {
-    decryptRequest,
-    encryptResponse,
-    FlowEndpointException
-} = require("./flowCrypto");
+const { encryptResponse } = require("./flowCrypto");
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json());
 
-app.get("/", (req, res) => {
-    res.send("OK");
-});
-
+// ===== FLOW ENDPOINT =====
 app.post("/webhook", (req, res) => {
     try {
-        console.log("Incoming Flow Request");
+        console.log("REQ:", req.body);
 
-        const decrypted = decryptRequest(req.body);
+        // Meta يرسل AES key و IV داخل الطلب (مهم جداً)
+        const { aes_key, initial_vector } = req.body;
 
-        console.log("Decrypted OK");
+        const aesKeyBuffer = Buffer.from(aes_key, "base64");
+        const ivBuffer = Buffer.from(initial_vector, "base64");
 
-        const { version, action } = decrypted;
-
-        // ===== INIT =====
-        if (action === "INIT") {
-            const response = {
-                version,
-                screen: "LOAN",
-                data: {
-                    title: "Render + Meta Working 🎉",
-                    amount: "720000",
-                    status: "active"
-                }
-            };
-
-            // 🔥 مهم: يرجع BASE64 مش JSON
-            const encrypted = encryptResponse(response, decrypted);
-
-            return res.send(encrypted);
-        }
-
-        // fallback
         const response = {
-            version,
+            version: "7.3",
             screen: "LOAN",
             data: {
-                title: "OK",
-                amount: "720000"
+                title: "Render + Meta Working 🎉",
+                amount: "720000",
+                status: "active"
             }
         };
 
-        const encrypted = encryptResponse(response, decrypted);
+        const encrypted = encryptResponse(
+            response,
+            aesKeyBuffer,
+            ivBuffer
+        );
 
-        return res.send(encrypted);
+        // ⚠️ لازم ترجع STRING فقط
+        res.send(encrypted);
 
     } catch (err) {
         console.error(err);
-
-        if (err instanceof FlowEndpointException) {
-            return res.status(err.statusCode).send();
-        }
-
-        return res.status(500).send("error");
+        res.status(500).send("error");
     }
 });
 
+// ===== HEALTH =====
+app.get("/", (req, res) => {
+    res.send("Server is running");
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Running"));
+app.listen(PORT, () => console.log("Running on " + PORT));
