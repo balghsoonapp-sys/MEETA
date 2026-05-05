@@ -1,20 +1,25 @@
 const express = require("express");
-const { encryptResponse } = require("./flowCrypto");
+const crypto = require("crypto");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 // ===== FLOW ENDPOINT =====
 app.post("/webhook", (req, res) => {
     try {
-        console.log("REQ:", req.body);
+        console.log("REQUEST:", JSON.stringify(req.body, null, 2));
 
-        // Meta يرسل AES key و IV داخل الطلب (مهم جداً)
+        // 🔥 Meta يرسل هذه القيم
         const { aes_key, initial_vector } = req.body;
+
+        if (!aes_key || !initial_vector) {
+            return res.status(400).send("missing encryption keys");
+        }
 
         const aesKeyBuffer = Buffer.from(aes_key, "base64");
         const ivBuffer = Buffer.from(initial_vector, "base64");
 
+        // ===== RESPONSE (RAW JSON) =====
         const response = {
             version: "7.3",
             screen: "LOAN",
@@ -25,22 +30,29 @@ app.post("/webhook", (req, res) => {
             }
         };
 
-        const encrypted = encryptResponse(
-            response,
+        const plaintext = JSON.stringify(response);
+
+        // ===== AES-256-CBC ENCRYPT =====
+        const cipher = crypto.createCipheriv(
+            "aes-256-cbc",
             aesKeyBuffer,
             ivBuffer
         );
 
-        // ⚠️ لازم ترجع STRING فقط
-        res.send(encrypted);
+        let encrypted = cipher.update(plaintext, "utf8", "base64");
+        encrypted += cipher.final("base64");
+
+        // 🔥 IMPORTANT: return STRING ONLY
+        res.setHeader("Content-Type", "text/plain");
+        return res.send(encrypted);
 
     } catch (err) {
-        console.error(err);
-        res.status(500).send("error");
+        console.error("ERROR:", err);
+        return res.status(500).send("error");
     }
 });
 
-// ===== HEALTH =====
+// ===== HEALTH CHECK =====
 app.get("/", (req, res) => {
     res.send("Server is running");
 });
