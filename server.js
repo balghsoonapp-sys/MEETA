@@ -8,28 +8,28 @@ const {
 } = require("./flowCrypto");
 
 const app = express();
-
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
 
-app.post("/webhook", async (req, res) => {
-  let decryptedRequest;
-
+app.post("/webhook", (req, res) => {
   try {
     console.log("📩 Flow Request received");
 
-    decryptedRequest = decryptRequest(req.body);
+    const decryptedRequest = decryptRequest(req.body);
+    const body = decryptedRequest.decryptedBody;
 
-    console.log("🔓 Decrypted request:", JSON.stringify(decryptedRequest.decryptedBody, null, 2));
+    console.log("🔓 Decrypted body:", JSON.stringify(body, null, 2));
 
-    const { version, action, screen, data, flow_token } = decryptedRequest.decryptedBody;
+    const version = body.version || "3.0";
+    const action = body.action;
+    const data = body.data || {};
 
     let responsePayload;
 
-    // WhatsApp health check
+    // WhatsApp Flow health check
     if (action === "ping") {
       responsePayload = {
         version,
@@ -44,8 +44,8 @@ app.post("/webhook", async (req, res) => {
         .send(encryptResponse(responsePayload, decryptedRequest));
     }
 
-    // Error notification acknowledgement
-    if (data && data.error) {
+    // Error notification from WhatsApp client
+    if (data.error) {
       responsePayload = {
         version,
         data: {
@@ -59,16 +59,12 @@ app.post("/webhook", async (req, res) => {
         .send(encryptResponse(responsePayload, decryptedRequest));
     }
 
-    // Initial opening of Flow
+    // Your Flow screen ID is RECOMMEND, not LOAN
     if (action === "INIT") {
       responsePayload = {
         version,
-        screen: "LOAN",
-        data: {
-          title: "Meta Flow Working",
-          amount: "720000",
-          status: "active",
-        },
+        screen: "RECOMMEND",
+        data: {},
       };
 
       return res
@@ -77,17 +73,37 @@ app.post("/webhook", async (req, res) => {
         .send(encryptResponse(responsePayload, decryptedRequest));
     }
 
-    // User submits screen / data_exchange
     if (action === "data_exchange") {
-      responsePayload = {
-        version,
-        screen: "LOAN",
-        data: {
-          title: "تم استلام البيانات",
-          amount: "720000",
-          status: "active",
-        },
-      };
+      const selected = Object.values(data)[0];
+
+      // If user selected "Yes"
+      if (String(selected || "").includes("نعم")) {
+        responsePayload = {
+          version,
+          screen: "SUCCESS",
+          data: {
+            extension_message_response: {
+              params: {
+                flow_token: body.flow_token || "appointment_confirmed",
+                appointment_status: "confirmed",
+              },
+            },
+          },
+        };
+      } else {
+        responsePayload = {
+          version,
+          screen: "SUCCESS",
+          data: {
+            extension_message_response: {
+              params: {
+                flow_token: body.flow_token || "appointment_cancelled",
+                appointment_status: "cancelled",
+              },
+            },
+          },
+        };
+      }
 
       return res
         .status(200)
@@ -95,15 +111,10 @@ app.post("/webhook", async (req, res) => {
         .send(encryptResponse(responsePayload, decryptedRequest));
     }
 
-    // Fallback valid encrypted response
     responsePayload = {
-      version: version || "3.0",
-      screen: "LOAN",
-      data: {
-        title: "OK",
-        amount: "720000",
-        status: "active",
-      },
+      version,
+      screen: "RECOMMEND",
+      data: {},
     };
 
     return res
@@ -111,20 +122,19 @@ app.post("/webhook", async (req, res) => {
       .type("text/plain")
       .send(encryptResponse(responsePayload, decryptedRequest));
 
-  } catch (error) {
-    console.error("❌ FLOW ERROR:", error);
+  } catch (err) {
+    console.error("❌ FLOW ERROR:", err);
 
-    if (error instanceof FlowEndpointException) {
-      return res.sendStatus(error.statusCode);
+    if (err instanceof FlowEndpointException) {
+      return res.sendStatus(err.statusCode);
     }
 
-    // Meta recommends 421 if request cannot be decrypted.
-    return res.sendStatus(421);
+    return res.sendStatus(500);
   }
 });
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("🚀 Server running on port", PORT);
 });
