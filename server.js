@@ -1,41 +1,74 @@
 const express = require("express");
-const { decryptRequest, encryptResponse } = require("./flowCrypto");
+require("dotenv").config();
+
+const {
+  decryptRequest,
+  encryptResponse,
+  FlowEndpointException
+} = require("./flowCrypto");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
-app.get("/", (req, res) => res.send("OK"));
+// ===== HEALTH CHECK =====
+app.get("/", (req, res) => {
+  res.send("Server is running");
+});
 
+// ===== WEBHOOK / FLOW ENDPOINT =====
 app.post("/webhook", (req, res) => {
-  console.log("🔥 RAW BODY:", JSON.stringify(req.body, null, 2));
-
   try {
+    console.log("📩 Incoming Flow Request");
+
+    // 🔐 decrypt request from Meta
     const decrypted = decryptRequest(req.body);
 
-    console.log("✅ DECRYPT OK");
+    console.log("🔓 Decrypted:", decrypted);
 
+    const { version, action } = decrypted;
+
+    // ===== INIT =====
+    if (action === "INIT") {
+      const response = {
+        version,
+        screen: "LOAN",
+        data: {
+          title: "Render Flow Working 🚀",
+          amount: "720000",
+          status: "active"
+        }
+      };
+
+      const encrypted = encryptResponse(response, decrypted);
+      return res.send(encrypted);
+    }
+
+    // ===== DEFAULT =====
     const response = {
-      version: decrypted.version,
+      version,
       screen: "LOAN",
       data: {
-        title: "Working 🚀",
+        title: "OK",
         amount: "720000"
       }
     };
 
     const encrypted = encryptResponse(response, decrypted);
-
-    console.log("✅ ENCRYPT OK");
-
-    return res.status(200).send(encrypted);
+    return res.send(encrypted);
 
   } catch (err) {
-    console.error("❌ ERROR TYPE:", err.message);
-    console.error(err.stack);
+    console.error("❌ FLOW ERROR:", err);
+
+    if (err instanceof FlowEndpointException) {
+      return res.status(err.statusCode).send();
+    }
 
     return res.status(500).send("error");
   }
 });
 
+// ===== START SERVER =====
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("RUNNING"));
+app.listen(PORT, () => {
+  console.log("🚀 Server running on port " + PORT);
+});
